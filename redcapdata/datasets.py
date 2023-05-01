@@ -4,32 +4,22 @@ import json
 import pandas as pd
 import numpy as np
 from datetime import datetime
-# from multiprocessing import Pool
-import os
-from functools import reduce,partial
+
+from functools import reduce
 import re
 
-class Project:
-    def __init__(self, url, id_var, date_var, token, project="cin"):
-        self.url = url
-        self.date_var = date_var
-        self.id_var = id_var
-        self.token = token
-        self.project = project
 
-project=Project(url="",id_var="id",date_var="date_today",
-            token="")
 
 
 
 # gets data from redcap
-def create_chunk_request_data(ids_,project,variables=None):
+def create_chunk_request_data(ids_,token,variables=None):
         x = {}
         for i, j in enumerate(ids_):
             x["records[{}]".format(i)] = '{}'.format(j)
 
         data = {
-            'token': project.token,
+            'token': token,
             'content': 'record',
             'format': 'json',
             'type': 'flat',
@@ -52,25 +42,28 @@ def create_chunk_request_data(ids_,project,variables=None):
         return data
     
     
-def get_data(project, start=None, stop=None,variables=None, max_chunk_size=500, parallel_calls=50):
+def get_data(url,token,id_var, filter_fun=None, filter_vars=(),variables=None, max_chunk_size=500, parallel_calls=10):
     """
-    :param max_chunk_size: Maximum number of records in a chunk
-    :param parallel_calls: Number of request to make at a time
-    :param project: A project object
-    :param start: start date eg '2009-01-01'. leave None for beginning of study
-    :param stop: stop date eg '2009-01-02'. leave None for latest input
-    :param variables: List of variables to fetch. None for all
-    :return:
+
+    :param url: Redcap api url
+    :param token: Redcap token
+    :param id_var: variable for record id
+    :param filter_fun: function for filtering records to fetch
+    :param filter_vars: variables to pull in initial request. Required by filter_fun
+    :param variables: Variable to fetch. None for all
+    :param max_chunk_size: Size of each chunk. Data is fetched in chunks
+    :param parallel_calls: Number of chucks to fetch in parallel
+    :return: Data as list of dictionaries
     """
+
 
 
     data = {
-        'token': project.token,
+        'token': token,
         'content': 'record',
         'format': 'json',
         'type': 'flat',
-        'fields[0]': project.id_var,
-        'fields[1]': project.date_var,
+        'fields[0]': id_var,
         #'record[]': outputTwo(),
         'rawOrLabel': 'raw',
         'rawOrLabelHeaders': 'raw',
@@ -79,36 +72,37 @@ def get_data(project, start=None, stop=None,variables=None, max_chunk_size=500, 
         'exportDataAccessGroups': 'false',
         'returnFormat': 'json'
     }
-    print("Fetching record ids and dates")
-    request = requests.post(project.url, data=data, verify=False)
+    for i,var in enumerate(filter_vars):
+        data[f'fields[{i+1}]']=var
+
+    print("Fetching record ids and filter variables")
+    request = requests.post(url, data=data, verify=False)
     data = json.loads(request.text)
-    data2 = pd.DataFrame(data)
-    data2[project.date_var] = pd.to_datetime(data2[project.date_var])
 
-    if start is not None:
-        data2 = data2.loc[data2[project.date_var] >= pd.to_datetime(start), :]
+    data2=data
+    if filter_fun is not None:
+        data2=filter(filter_fun,data2)
+    data2=pd.DataFrame(data2)
 
-    if stop is not None:
-        data2 = data2.loc[data2[project.date_var] <= pd.to_datetime(stop), :]
 
     # print(data2)
-    if data2.shape[0] == 0:
+    if len(data2) == 0:
         return []
 
-    ids_len=data2.shape[0]
+    ids_len=len(data2)
     ids=[]
     for i in range(0, ids_len, max_chunk_size):
         if (i+max_chunk_size)<ids_len:
-            ids.append(data2[project.id_var][i:i+max_chunk_size].values)
+            ids.append(data2[id_var][i:i+max_chunk_size].values)
         else:
-            ids.append(data2[project.id_var][i:i+max_chunk_size].values)
+            ids.append(data2[id_var][i:i+max_chunk_size].values)
         
                 
                 
     all_requests=[]
     for id_chunk in ids:
-        chunk_request=create_chunk_request_data(ids_=id_chunk,project=project,variables=variables)
-        all_requests.append(grequests.post(project.url, data=chunk_request, verify=False))
+        chunk_request=create_chunk_request_data(ids_=id_chunk,token=token,variables=variables)
+        all_requests.append(grequests.post(url, data=chunk_request, verify=False))
 
     all_responses=grequests.map(all_requests,size=parallel_calls)
     data_lists=[]
@@ -131,23 +125,25 @@ def get_data(project, start=None, stop=None,variables=None, max_chunk_size=500, 
 
 
 
-def get_metadata(project):
+def get_metadata(url,token):
     """
-    :param project: project object
-    :returns: metadata
+
+    :param url: Redcap URL
+    :param token: project token
+    :return: Metadata as list of dictionaries
     """
     data1 = {
-        'token': project.token,
+        'token': token,
         'content': 'metadata',
         'format': 'json',
         'returnFormat': 'json'
     }
 
-    request1 = requests.post(project.url, data=data1, verify=False)
+    request1 = requests.post(url, data=data1, verify=False)
     data1 = json.loads(request1.text)
     return data1
 
-print(get_metadata(project))
+
 
 class Metadata:
 
@@ -304,9 +300,9 @@ class Metadata:
         if choice=="":
             raise Exception("variable %s does not have choices" % variable)
         choices = choice.split("|")
-        pattern_keys=re.compile(r'(\d+)\s?,')
+        pattern_keys=re.compile(r'(-?\d+)\s?,')
         keys=[pattern_keys.search(item).group(1) for item in choices]
-        pattern_values=re.compile(r'\d+\s?,(.*)')
+        pattern_values=re.compile(r'-?\d+\s?,(.*)')
         values=[pattern_values.search(item).group(1) for item in choices]
         choices={k:v.strip() for k,v in zip(keys,values)}
 
