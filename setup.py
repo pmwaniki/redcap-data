@@ -3,7 +3,7 @@ from setuptools import setup
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
     name='Measurements',
-    url='https://github.com/jladan/package_demo',
+    url='https://github.com/pmwaniki/redcap-data',
     author='Paul Mwaniki',
     author_email='pmmwaniki06@gmail.com',
     # Needed to actually package something
