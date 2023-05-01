@@ -7,7 +7,7 @@ setup(
     author='Paul Mwaniki',
     author_email='pmmwaniki06@gmail.com',
     # Needed to actually package something
-    packages=['redcapdata'],
+    py_modules=['redcapdata'],
     # Needed for dependencies
     install_requires=['numpy','pandas','grequests','requests'],
     # *strongly* suggested for sharing
