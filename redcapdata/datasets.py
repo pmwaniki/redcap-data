@@ -42,7 +42,7 @@ def create_chunk_request_data(ids_,token,variables=None):
         return data
     
     
-def get_data(url,token,id_var, filter_fun=None, filter_vars=(),variables=None, max_chunk_size=500, parallel_calls=10):
+def get_data(url,token,id_var, filter_fun=None, filter_vars=(),variables=None, max_chunk_size=500, parallel_calls=10,ssl_verify=True):
     """
 
     :param url: Redcap api url
@@ -53,6 +53,7 @@ def get_data(url,token,id_var, filter_fun=None, filter_vars=(),variables=None, m
     :param variables: Variable to fetch. None for all
     :param max_chunk_size: Size of each chunk. Data is fetched in chunks
     :param parallel_calls: Number of chucks to fetch in parallel
+    :param ssl_verify: Verify https certificate
     :return: Data as list of dictionaries
     """
 
@@ -76,7 +77,7 @@ def get_data(url,token,id_var, filter_fun=None, filter_vars=(),variables=None, m
         data[f'fields[{i+1}]']=var
 
     print("Fetching record ids and filter variables")
-    request = requests.post(url, data=data, verify=False)
+    request = requests.post(url, data=data, verify=ssl_verify)
     data = json.loads(request.text)
 
     data2=data
