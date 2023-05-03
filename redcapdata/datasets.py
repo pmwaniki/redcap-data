@@ -224,22 +224,29 @@ class Metadata:
         
         if field_type =="checkbox":
             return "checkbox"
-        if field_type != "text":
-            return "categorical"
-        
-        
-        type_=self.metadata_expanded[variable]['text_validation_type_or_show_slider_number']
-        v_type='str'
-        if type_ == '':
+        if field_type =="text":
+            type_ = self.metadata_expanded[variable]['text_validation_type_or_show_slider_number']
             v_type = 'str'
-        elif 'date' in type_:
-            v_type = 'date'
-        elif type_ == "number":
-            v_type = 'float'
-        elif type_ == 'integer':
-            v_type = 'int'
+            if type_ == '':
+                v_type = 'str'
+            elif 'date' in type_:
+                v_type = 'date'
+            elif type_ == "number":
+                v_type = 'float'
+            elif type_ == 'integer':
+                v_type = 'int'
 
-        return v_type
+            return v_type
+        if field_type == "descriptive":
+            return "str"
+        if field_type in ['radio','dropdown', 'yesno']:
+            return 'categorical'
+        # if field_type == 'yesno':
+        #     return ''
+        raise NotImplementedError(f'get_type Not implemented for field type {field_type}')
+        
+        
+
 
     def get_valid_range(self, variable):
 
@@ -385,9 +392,12 @@ class Metadata:
 #            column = column.replace('',np.nan).astype(float)
            
         elif type_ == 'date':
+            # format=None
             try:
                 column = pd.to_datetime(column, format='%Y-%m-%d',errors = 'coerce')
             except:
                 column = pd.to_datetime(column, format='%Y/%m/%d',errors = 'coerce')
+        else:
+            raise NotImplementedError(f"format_column not implemented for type {type_}")
         return column
         
