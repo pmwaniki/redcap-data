@@ -103,7 +103,7 @@ def get_data(url,token,id_var, filter_fun=None, filter_vars=(),variables=None, m
     all_requests=[]
     for id_chunk in ids:
         chunk_request=create_chunk_request_data(ids_=id_chunk,token=token,variables=variables)
-        all_requests.append(grequests.post(url, data=chunk_request, verify=False))
+        all_requests.append(grequests.post(url, data=chunk_request, verify=ssl_verify))
 
     all_responses=grequests.map(all_requests,size=parallel_calls)
     data_lists=[]
