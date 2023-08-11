@@ -71,6 +71,10 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
         data2=data
         if filter_fun is not None:
             data2=filter(filter_fun,data2)
+
+        if len(data2) == 0:
+            return []
+
         data2=pd.DataFrame(data2)
 
         if data2[id_var].duplicated().any():
@@ -78,8 +82,7 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
 
 
         # print(data2)
-        if len(data2) == 0:
-            return []
+
 
         ids_len=len(data2)
         ids=[]
