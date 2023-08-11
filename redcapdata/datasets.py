@@ -13,59 +13,12 @@ import re
 
 
 # gets data from redcap
-def create_chunk_request_data(ids_,token,variables=None):
-        x = {}
-        for i, j in enumerate(ids_):
-            x["records[{}]".format(i)] = '{}'.format(j)
-
-        data = {
-            'token': token,
-            'content': 'record',
-            'format': 'json',
-            'type': 'flat',
-            'rawOrLabel': 'raw',
-            'rawOrLabelHeaders': 'raw',
-            'exportCheckboxLabel': 'false',
-            'exportSurveyFields': 'false',
-            'exportDataAccessGroups': 'false',
-            'returnFormat': 'json'
-        }
-    
-        for k, v in x.items():
-            data[k] = v
-    
-        if variables is not None:
-            for i,v in enumerate(variables):
-                data[f'fields[{i}]'] = v
-    
-
-        return data
-    
-    
-def get_data(url,token,id_var, filter_fun=None, filter_vars=(),variables=None, max_chunk_size=500, parallel_calls=10,ssl_verify=True):
-    """
-
-    :param url: Redcap api url
-    :param token: Redcap token
-    :param id_var: variable for record id
-    :param filter_fun: function for filtering records to fetch
-    :param filter_vars: variables to pull in initial request. Required by filter_fun
-    :param variables: Variable to fetch. None for all
-    :param max_chunk_size: Size of each chunk. Data is fetched in chunks
-    :param parallel_calls: Number of chucks to fetch in parallel
-    :param ssl_verify: Verify https certificate
-    :return: Data as list of dictionaries
-    """
-
-
-
+def create_request_data(token,ids_=None,variables=None):
     data = {
         'token': token,
         'content': 'record',
         'format': 'json',
         'type': 'flat',
-        'fields[0]': id_var,
-        #'record[]': outputTwo(),
         'rawOrLabel': 'raw',
         'rawOrLabelHeaders': 'raw',
         'exportCheckboxLabel': 'false',
@@ -73,60 +26,93 @@ def get_data(url,token,id_var, filter_fun=None, filter_vars=(),variables=None, m
         'exportDataAccessGroups': 'false',
         'returnFormat': 'json'
     }
-    for i,var in enumerate(filter_vars):
-        data[f'fields[{i+1}]']=var
 
-    print("Fetching record ids and filter variables")
-    request = requests.post(url, data=data, verify=ssl_verify)
-    data = json.loads(request.text)
+    if ids_ is not None:
+        for i, j in enumerate(ids_):
+            data["records[{}]".format(i)] = '{}'.format(j)
 
-    data2=data
-    if filter_fun is not None:
-        data2=filter(filter_fun,data2)
-    data2=pd.DataFrame(data2)
-
-
-    # print(data2)
-    if len(data2) == 0:
-        return []
-
-    ids_len=len(data2)
-    ids=[]
-    for i in range(0, ids_len, max_chunk_size):
-        if (i+max_chunk_size)<ids_len:
-            ids.append(data2[id_var][i:i+max_chunk_size].values)
-        else:
-            ids.append(data2[id_var][i:i+max_chunk_size].values)
-        
-                
-                
-    all_requests=[]
-    for id_chunk in ids:
-        chunk_request=create_chunk_request_data(ids_=id_chunk,token=token,variables=variables)
-        all_requests.append(grequests.post(url, data=chunk_request, verify=ssl_verify))
-
-    all_responses=grequests.map(all_requests,size=parallel_calls)
-    data_lists=[]
-    for response in all_responses:
-        if response.status_code != 200:
-            raise Exception(f"Error fetching data from redcap, message: {response.text} ")
-        data_lists.append(json.loads(response.text))
-
-    # download_fun=partial(get_chunk,project=project,variables=variables)
-    # print("Fetching data in %d chunks in %d parallel processes" % (len(ids),parallel))
-    # with Pool(processes=parallel) as pool:
-    #     data_lists=pool.map(download_fun,ids)
     
-    data_combined=reduce(lambda x,y:x+y,data_lists)
-    
-    return data_combined
+    if variables is not None:
+        for i,v in enumerate(variables):
+            data[f'fields[{i}]'] = v
     
 
+    return data
+    
+    
+def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),variables=None, max_chunk_size=500, parallel_calls=10,ssl_verify=True):
+    """
+
+    :param url: Redcap api url
+    :param token: Redcap token
+    :param id_var: variable for record id
+    :param ids: list of ids to fetch. None for all records
+    :param filter_fun: function for filtering records to fetch. Ignored if id_var=None
+    :param filter_vars: variables to pull in initial request. Required by filter_fun and ignored if id_var=None
+    :param variables: Variable to fetch. None for all
+    :param max_chunk_size: Size of each chunk. Data is fetched in chunks. Ignored if id_var=None
+    :param parallel_calls: Number of chucks to fetch in parallel. Ignored if id_var=None
+    :param ssl_verify: Verify https certificate
+    :return: Data as list of dictionaries
+    """
+
+    if id_var is None:
+        request_data=create_request_data(token,variables=variables)
+        request = requests.post(url, data=request_data, verify=ssl_verify)
+        data = json.loads(request.text)
+        return data
+
+    else:
+        request_data_initial=create_request_data(token,ids_=ids,variables=list(set((id_var,)+filter_vars)))
+        print("Fetching record ids and filter variables")
+        request = requests.post(url, data=request_data_initial, verify=ssl_verify)
+        data = json.loads(request.text)
+
+        data2=data
+        if filter_fun is not None:
+            data2=filter(filter_fun,data2)
+        data2=pd.DataFrame(data2)
+
+        if data2[id_var].duplicated().any():
+            raise Exception("There are duplicates in 'id_var'. Set id_var=None to fetch all records")
+
+
+        # print(data2)
+        if len(data2) == 0:
+            return []
+
+        ids_len=len(data2)
+        ids=[]
+        for i in range(0, ids_len, max_chunk_size):
+            if (i+max_chunk_size)<ids_len:
+                ids.append(data2[id_var][i:i+max_chunk_size].values)
+            else:
+                ids.append(data2[id_var][i:i+max_chunk_size].values)
+
+
+
+        all_requests=[]
+        for id_chunk in ids:
+            chunk_request=create_request_data(ids_=id_chunk,token=token,variables=variables)
+            all_requests.append(grequests.post(url, data=chunk_request, verify=ssl_verify))
+
+        all_responses=grequests.map(all_requests,size=parallel_calls)
+        data_lists=[]
+        for response in all_responses:
+            if response.status_code != 200:
+                raise Exception(f"Error fetching data from redcap, message: {response.text} ")
+            data_lists.append(json.loads(response.text))
+
+        data_combined=reduce(lambda x,y:x+y,data_lists)
+
+        return data_combined
+    
 
 
 
 
-def get_metadata(url,token):
+
+def get_metadata(url,token,ssl_verify=True):
     """
 
     :param url: Redcap URL
@@ -140,7 +126,7 @@ def get_metadata(url,token):
         'returnFormat': 'json'
     }
 
-    request1 = requests.post(url, data=data1, verify=False)
+    request1 = requests.post(url, data=data1, verify=ssl_verify)
     data1 = json.loads(request1.text)
     return data1
 
