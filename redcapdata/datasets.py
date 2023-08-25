@@ -111,7 +111,50 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
         return data_combined
     
 
+def post_data(url,token,rows,overwrite=True,max_chunk_size=500, parallel_calls=10,ssl_verify=True):
+    """
+    Post data into RedCap using API
+    :param url: api url of RedCap Server
+    :param token: token of RedCap project
+    :param rows: list of dictionaries. ie json
+    :overwrite: blank/empty values are valid and will overwrite data
+    :param max_chunk_size: Maximum size of request
+    :param parallel_calls: Number of parallel requests
+    :param ssl_verify: Enforce ssl verification
+    :return: Number of imported records
+    """
+    def create_post_data(token,chunk):
+        return {
+            'token': token,
+            'content': 'record',
+            'format': 'json',
+            'type': 'flat',
+            'overwriteBehavior': 'overwrite' if overwrite else 'normal',
+            'forceAutoNumber': 'false',
+            'data': chunk,
+            'returnContent': 'count',
+            'returnFormat': 'json'
+        }
+    ids_len = len(rows)
+    list_rows = []
+    for i in range(0, ids_len, max_chunk_size):
+        if (i + max_chunk_size) < ids_len:
+            list_rows.append(rows[i:i + max_chunk_size])
+        else:
+            list_rows.append(rows[i:i + max_chunk_size])
 
+    all_requests = []
+    for chunk in list_rows:
+        chunk_request = create_post_data( token=token, chunk=chunk)
+        all_requests.append(grequests.post(url, data=chunk_request, verify=ssl_verify))
+
+    all_responses = grequests.map(all_requests, size=parallel_calls)
+    number_imported=0
+    for response in all_responses:
+        if response.status_code != 200:
+            raise Exception(f"Error posting data to redcap, message: {response.text} ")
+        number_imported+=int(response.text)
+    return number_imported
 
 
 
