@@ -279,7 +279,7 @@ class Metadata:
         if field_type in ['radio','dropdown', 'yesno']:
             return 'categorical'
         if field_type == "calc":
-            return "str"
+            return "calc"
         # if field_type == 'yesno':
         #     return ''
         raise NotImplementedError(f'get_type Not implemented for field type {field_type}')
