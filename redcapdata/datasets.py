@@ -59,6 +59,8 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
     if id_var is None:
         request_data=create_request_data(token,variables=variables)
         request = requests.post(url, data=request_data, verify=ssl_verify)
+        if request.status_code !=200:
+            raise Exception(f"Error: {request.text}")
         data = json.loads(request.text)
         return data
 
@@ -66,6 +68,8 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
         request_data_initial=create_request_data(token,ids_=ids,variables=list(set((id_var,)+filter_vars)))
         print("Fetching record ids and filter variables")
         request = requests.post(url, data=request_data_initial, verify=ssl_verify)
+        if request.status_code !=200:
+            raise Exception(f"Error: {request.text}")
         data = json.loads(request.text)
 
         data2=data
