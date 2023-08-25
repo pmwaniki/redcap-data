@@ -421,7 +421,7 @@ class Metadata:
             choices=self.get_choices(var_name)
             column=column.map(choices)
         
-        elif type_ == 'str':
+        elif (type_ == 'str') | (type_ == 'calc'):
             column = column
         elif type_ == 'float':
             column = column.replace('',np.nan).astype(float)
