@@ -135,7 +135,7 @@ def post_data(url,token,rows,overwrite=True,max_chunk_size=500, parallel_calls=1
             'type': 'flat',
             'overwriteBehavior': 'overwrite' if overwrite else 'normal',
             'forceAutoNumber': 'false',
-            'data': chunk,
+            'data': json.dumps(chunk),
             'returnContent': 'count',
             'returnFormat': 'json'
         }
@@ -150,14 +150,14 @@ def post_data(url,token,rows,overwrite=True,max_chunk_size=500, parallel_calls=1
     all_requests = []
     for chunk in list_rows:
         chunk_request = create_post_data( token=token, chunk=chunk)
-        all_requests.append(grequests.post(url, data=json.dumps(chunk_request), verify=ssl_verify))
+        all_requests.append(grequests.post(url, data=chunk_request, verify=ssl_verify))
 
     all_responses = grequests.map(all_requests, size=parallel_calls)
     number_imported=0
     for response in all_responses:
         if response.status_code != 200:
             raise Exception(f"Error posting data to redcap, message: {response.text} ")
-        number_imported+=int(response.text)
+        number_imported+=int(json.loads(response.text)['count'])
     return number_imported
 
 
