@@ -1,16 +1,23 @@
-import grequests
-import requests
+import asyncio
+from typing import List, Optional, Callable
+
+import aiohttp
+
 import json
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import pyarrow as pa
 
 from functools import reduce
 import re
 
 
 
-
+# def release_mem():
+#     import ctypes
+#     libc = ctypes.CDLL("libc.so.6")
+#     libc.malloc_trim(0)
 
 # gets data from redcap
 def create_request_data(token,ids_=None,variables=None):
@@ -39,8 +46,39 @@ def create_request_data(token,ids_=None,variables=None):
 
     return data
     
-    
-def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),variables=None, max_chunk_size=500, parallel_calls=10,ssl_verify=True):
+async def async_post_one(url: str,data: dict,ssl_verify:bool = True,
+                         session: Optional[aiohttp.ClientSession]=None,post_process:Optional[Callable]=None):
+    if session is None:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url=url,data=data,verify_ssl=ssl_verify) as response:
+                resp= await response.json()
+                if post_process:
+                    resp=post_process(resp)
+                # resp= pa.Table.from_pylist(resp)
+        # release_mem()
+        return resp
+    else:
+        async with session.post(url=url, data=data, verify_ssl=ssl_verify) as response:
+            resp = await response.json()
+            if post_process:
+                resp = post_process(resp)
+        # release_mem()
+        return resp
+
+
+async def async_post_many(url:str,data:List[dict],ssl_verfy:bool=True,parallel_calls:int = 10,post_process:Optional[Callable]=None):
+    connector = aiohttp.TCPConnector(limit=parallel_calls)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks=[]
+        for dat in data:
+            tasks.append(async_post_one(url,data=dat,ssl_verify=ssl_verfy,session=session,post_process=post_process))
+        data_lists = await asyncio.gather(*tasks,return_exceptions=True)
+        return data_lists
+
+def conv_to_pd(x):
+    return pa.Table.from_pylist(x).to_pandas(deduplicate_objects=False)
+def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),variables=None, max_chunk_size=500,
+             parallel_calls=10,ssl_verify=True,convert_to_pandas=False):
     """
 
     :param url: Redcap api url
@@ -58,61 +96,70 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
 
     if id_var is None:
         request_data=create_request_data(token,variables=variables)
-        request = requests.post(url, data=request_data, verify=ssl_verify)
-        if request.status_code !=200:
-            raise Exception(f"Error: {request.text}")
-        data = json.loads(request.text)
+        # request = requests.post(url, data=request_data, verify=ssl_verify)
+        # if request.status_code !=200:
+        #     raise Exception(f"Error: {request.text}")
+        # data = json.loads(request.text)
+        data= async_post_one(url,request_data,ssl_verify=ssl_verify,
+                             post_process=conv_to_pd if convert_to_pandas else None)
         return data
 
     else:
         request_data_initial=create_request_data(token,ids_=ids,variables=list(set((id_var,)+filter_vars)))
-        print("Fetching record ids and filter variables")
-        request = requests.post(url, data=request_data_initial, verify=ssl_verify)
-        if request.status_code !=200:
-            raise Exception(f"Error: {request.text}")
-        data = json.loads(request.text)
+        # print("Fetching record ids and filter variables")
+        # request = requests.post(url, data=request_data_initial, verify=ssl_verify)
+        # if request.status_code !=200:
+        #     raise Exception(f"Error: {request.text}")
+        # data = json.loads(request.text)
 
-        data2=data
+        data =asyncio.run(async_post_one(url,data=request_data_initial,ssl_verify=ssl_verify))
+        # data=json.loads(data)
+
+        # data2=data
         if filter_fun is not None:
-            data2=filter(filter_fun,data2)
+            data=filter(filter_fun,data)
 
-        if len(data2) == 0:
+        if len(data) == 0:
             return []
 
-        data2=pd.DataFrame(data2)
+        # data=pd.DataFrame(data)
+        data_ids=list(map(lambda x:x[id_var],data))
+        unique_data_ids=list(set(data_ids))
 
-        if data2[id_var].duplicated().any():
-            raise Exception("There are duplicates in 'id_var'. Set id_var=None to fetch all records")
+        # if data[id_var].duplicated().any():
+        #     raise Exception("There are duplicates in 'id_var'. Set id_var=None to fetch all records")
 
 
         # print(data2)
 
 
-        ids_len=len(data2)
+        ids_len=len(unique_data_ids)
         ids=[]
         for i in range(0, ids_len, max_chunk_size):
             if (i+max_chunk_size)<ids_len:
-                ids.append(data2[id_var][i:i+max_chunk_size].values)
+                ids.append(unique_data_ids[i:i+max_chunk_size])
             else:
-                ids.append(data2[id_var][i:i+max_chunk_size].values)
+                ids.append(unique_data_ids[i:i+max_chunk_size])
+
+        requests_data=[create_request_data(ids_=ids_, token=token, variables=variables)
+        for ids_ in ids]
 
 
 
-        all_requests=[]
-        for id_chunk in ids:
-            chunk_request=create_request_data(ids_=id_chunk,token=token,variables=variables)
-            all_requests.append(grequests.post(url, data=chunk_request, verify=ssl_verify))
+        data_lists=asyncio.run(async_post_many(url,data=requests_data,ssl_verfy=ssl_verify,parallel_calls=parallel_calls,
+                                               post_process=conv_to_pd if convert_to_pandas else None))
+        # data_combined=[]
+        # for chunk in data_lists:
+        #     data_combined= data_combined + chunk
 
-        all_responses=grequests.map(all_requests,size=parallel_calls)
-        data_lists=[]
-        for response in all_responses:
-            if response.status_code != 200:
-                raise Exception(f"Error fetching data from redcap, message: {response.text} ")
-            data_lists.append(json.loads(response.text))
-
-        data_combined=reduce(lambda x,y:x+y,data_lists)
-
+        # data_combined=pa.concat_tables(data_lists)
+        if convert_to_pandas:
+            data_combined=pd.concat(data_lists,axis=0)
+        else:
+            data_combined=reduce(lambda x,y:x+y,data_lists)
         return data_combined
+
+        # return data_combined
     
 
 def post_data(url,token,rows,overwrite=True,max_chunk_size=500, parallel_calls=10,ssl_verify=True):
@@ -145,19 +192,17 @@ def post_data(url,token,rows,overwrite=True,max_chunk_size=500, parallel_calls=1
         if (i + max_chunk_size) < ids_len:
             list_rows.append(rows[i:i + max_chunk_size])
         else:
-            list_rows.append(rows[i:i + max_chunk_size])
+            list_rows.append(rows[i:ids_len])
 
     all_requests = []
     for chunk in list_rows:
         chunk_request = create_post_data( token=token, chunk=chunk)
-        all_requests.append(grequests.post(url, data=chunk_request, verify=ssl_verify))
+        all_requests.append(chunk_request)
 
-    all_responses = grequests.map(all_requests, size=parallel_calls)
+    all_responses = asyncio.run(async_post_many(url,all_requests,ssl_verfy=ssl_verify,parallel_calls=parallel_calls))
     number_imported=0
     for response in all_responses:
-        if response.status_code != 200:
-            raise Exception(f"Error posting data to redcap, message: {response.text} ")
-        number_imported+=int(json.loads(response.text)['count'])
+        number_imported+=int(response['count'])
     return number_imported
 
 
@@ -176,8 +221,7 @@ def get_metadata(url,token,ssl_verify=True):
         'returnFormat': 'json'
     }
 
-    request1 = requests.post(url, data=data1, verify=ssl_verify)
-    data1 = json.loads(request1.text)
+    data1 = asyncio.run(async_post_one(url, data=data1, ssl_verify=ssl_verify))
     return data1
 
 
