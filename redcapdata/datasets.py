@@ -100,8 +100,8 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
         # if request.status_code !=200:
         #     raise Exception(f"Error: {request.text}")
         # data = json.loads(request.text)
-        data= async_post_one(url,request_data,ssl_verify=ssl_verify,
-                             post_process=conv_to_pd if convert_to_pandas else None)
+        data= asyncio.run(async_post_one(url,request_data,ssl_verify=ssl_verify,
+                             post_process=conv_to_pd if convert_to_pandas else None))
         return data
 
     else:
