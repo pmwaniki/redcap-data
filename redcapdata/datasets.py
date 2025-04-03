@@ -20,7 +20,7 @@ import re
 #     libc.malloc_trim(0)
 
 # gets data from redcap
-def create_request_data(token,ids_=None,variables=None):
+def create_request_data(token,ids_=None,variables=None,forms=None,events=None):
     data = {
         'token': token,
         'content': 'record',
@@ -42,6 +42,14 @@ def create_request_data(token,ids_=None,variables=None):
     if variables is not None:
         for i,v in enumerate(variables):
             data[f'fields[{i}]'] = v
+
+    if forms is not None:
+        for i,f in enumerate(forms):
+            data[f'forms[{i}]'] = f
+
+    if events is not None:
+        for i,e in enumerate(events):
+            data[f'events[{i}]'] = e
     
 
     return data
@@ -77,7 +85,7 @@ async def async_post_many(url:str,data:List[dict],ssl_verfy:bool=True,parallel_c
 
 def conv_to_pd(x):
     return pa.Table.from_pylist(x).to_pandas(deduplicate_objects=False)
-def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),variables=None, max_chunk_size=500,
+def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),variables=None,forms=(),events=(), max_chunk_size=500,
              parallel_calls=10,ssl_verify=True,convert_to_pandas=False):
     """
 
@@ -95,7 +103,7 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
     """
 
     if id_var is None:
-        request_data=create_request_data(token,variables=variables)
+        request_data=create_request_data(token,variables=variables,forms=forms,events=events)
         # request = requests.post(url, data=request_data, verify=ssl_verify)
         # if request.status_code !=200:
         #     raise Exception(f"Error: {request.text}")
@@ -105,7 +113,7 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
         return data
 
     else:
-        request_data_initial=create_request_data(token,ids_=ids,variables=list(set((id_var,)+filter_vars)))
+        request_data_initial=create_request_data(token,ids_=ids,variables=list(set((id_var,)+filter_vars)),forms=None,events=None)
         # print("Fetching record ids and filter variables")
         # request = requests.post(url, data=request_data_initial, verify=ssl_verify)
         # if request.status_code !=200:
@@ -141,7 +149,7 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
             else:
                 ids.append(unique_data_ids[i:i+max_chunk_size])
 
-        requests_data=[create_request_data(ids_=ids_, token=token, variables=variables)
+        requests_data=[create_request_data(ids_=ids_, token=token, variables=variables,forms=None,events=None)
         for ids_ in ids]
 
 
