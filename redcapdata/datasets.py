@@ -113,7 +113,7 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
         return data
 
     else:
-        request_data_initial=create_request_data(token,ids_=ids,variables=list(set((id_var,)+filter_vars)),forms=None,events=None)
+        request_data_initial=create_request_data(token,ids_=ids,variables=list(set((id_var,)+filter_vars)),forms=forms,events=events)
         # print("Fetching record ids and filter variables")
         # request = requests.post(url, data=request_data_initial, verify=ssl_verify)
         # if request.status_code !=200:
@@ -149,7 +149,7 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
             else:
                 ids.append(unique_data_ids[i:i+max_chunk_size])
 
-        requests_data=[create_request_data(ids_=ids_, token=token, variables=variables,forms=None,events=None)
+        requests_data=[create_request_data(ids_=ids_, token=token, variables=variables,forms=forms,events=events)
         for ids_ in ids]
 
 
