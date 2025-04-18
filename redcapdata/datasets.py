@@ -14,11 +14,6 @@ import re
 
 
 
-# def release_mem():
-#     import ctypes
-#     libc = ctypes.CDLL("libc.so.6")
-#     libc.malloc_trim(0)
-
 # gets data from redcap
 def create_request_data(token,ids_=None,variables=None,forms=None,events=None):
     data = {
@@ -168,7 +163,71 @@ def get_data(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),va
         return data_combined
 
         # return data_combined
-    
+
+async def get_data_async(url,token,id_var=None, ids=None, filter_fun=None, filter_vars=(),variables=None,forms=(),events=(), max_chunk_size=500,
+             parallel_calls=10,ssl_verify=True,convert_to_pandas=False):
+    """
+
+    :param url: Redcap api url
+    :param token: Redcap token
+    :param id_var: variable for record id
+    :param ids: list of ids to fetch. None for all records
+    :param filter_fun: function for filtering records to fetch. Ignored if id_var=None
+    :param filter_vars: variables to pull in initial request. Required by filter_fun and ignored if id_var=None
+    :param variables: Variable to fetch. None for all
+    :param max_chunk_size: Size of each chunk. Data is fetched in chunks. Ignored if id_var=None
+    :param parallel_calls: Number of chucks to fetch in parallel. Ignored if id_var=None
+    :param ssl_verify: Verify https certificate
+    :return: Data as list of dictionaries
+    """
+
+    if id_var is None:
+        request_data=create_request_data(token,variables=variables,forms=forms,events=events)
+        data= await async_post_one(url,request_data,ssl_verify=ssl_verify,
+                             post_process=conv_to_pd if convert_to_pandas else None)
+        return data
+
+    else:
+        request_data_initial=create_request_data(token,ids_=ids,variables=list(set((id_var,)+filter_vars)),forms=forms,events=events)
+
+
+        data =await async_post_one(url,data=request_data_initial,ssl_verify=ssl_verify)
+
+        if filter_fun is not None:
+            data=filter(filter_fun,data)
+
+        if len(data) == 0:
+            return []
+
+        # data=pd.DataFrame(data)
+        data_ids=list(map(lambda x:x[id_var],data))
+        unique_data_ids=list(set(data_ids))
+
+
+
+
+        ids_len=len(unique_data_ids)
+        ids=[]
+        for i in range(0, ids_len, max_chunk_size):
+            if (i+max_chunk_size)<ids_len:
+                ids.append(unique_data_ids[i:i+max_chunk_size])
+            else:
+                ids.append(unique_data_ids[i:i+max_chunk_size])
+
+        requests_data=[create_request_data(ids_=ids_, token=token, variables=variables,forms=forms,events=events)
+        for ids_ in ids]
+
+
+
+        data_lists=await async_post_many(url,data=requests_data,ssl_verfy=ssl_verify,parallel_calls=parallel_calls,
+                                               post_process=conv_to_pd if convert_to_pandas else None)
+
+        if convert_to_pandas:
+            data_combined=pd.concat(data_lists,axis=0)
+        else:
+            data_combined=reduce(lambda x,y:x+y,data_lists)
+        return data_combined
+
 
 def post_data(url,token,rows,overwrite=True,max_chunk_size=500, parallel_calls=10,ssl_verify=True):
     """
