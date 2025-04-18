@@ -272,7 +272,48 @@ def post_data(url,token,rows,overwrite=True,max_chunk_size=500, parallel_calls=1
         number_imported+=int(response['count'])
     return number_imported
 
+async def post_data_async(url,token,rows,overwrite=True,max_chunk_size=500, parallel_calls=10,ssl_verify=True):
+    """
+    Post data into RedCap using API
+    :param url: api url of RedCap Server
+    :param token: token of RedCap project
+    :param rows: list of dictionaries. ie json
+    :overwrite: blank/empty values are valid and will overwrite data
+    :param max_chunk_size: Maximum size of request
+    :param parallel_calls: Number of parallel requests
+    :param ssl_verify: Enforce ssl verification
+    :return: Number of imported records
+    """
+    def create_post_data(token,chunk):
+        return {
+            'token': token,
+            'content': 'record',
+            'format': 'json',
+            'type': 'flat',
+            'overwriteBehavior': 'overwrite' if overwrite else 'normal',
+            'forceAutoNumber': 'false',
+            'data': json.dumps(chunk),
+            'returnContent': 'count',
+            'returnFormat': 'json'
+        }
+    ids_len = len(rows)
+    list_rows = []
+    for i in range(0, ids_len, max_chunk_size):
+        if (i + max_chunk_size) < ids_len:
+            list_rows.append(rows[i:i + max_chunk_size])
+        else:
+            list_rows.append(rows[i:ids_len])
 
+    all_requests = []
+    for chunk in list_rows:
+        chunk_request = create_post_data( token=token, chunk=chunk)
+        all_requests.append(chunk_request)
+
+    all_responses = await async_post_many(url,all_requests,ssl_verfy=ssl_verify,parallel_calls=parallel_calls)
+    number_imported=0
+    for response in all_responses:
+        number_imported+=int(response['count'])
+    return number_imported
 
 def get_metadata(url,token,ssl_verify=True):
     """
@@ -291,7 +332,22 @@ def get_metadata(url,token,ssl_verify=True):
     data1 = asyncio.run(async_post_one(url, data=data1, ssl_verify=ssl_verify))
     return data1
 
+async def get_metadata_async(url,token,ssl_verify=True):
+    """
 
+    :param url: Redcap URL
+    :param token: project token
+    :return: Metadata as list of dictionaries
+    """
+    data1 = {
+        'token': token,
+        'content': 'metadata',
+        'format': 'json',
+        'returnFormat': 'json'
+    }
+
+    data1 = await async_post_one(url, data=data1, ssl_verify=ssl_verify)
+    return data1
 
 class Metadata:
 
